@@ -48,7 +48,7 @@ trainData <- read.csv("pml-training.csv", na.strings=c("NA","#DIV/0!"))
 testData <- read.csv("pml-testing.csv", na.strings=c("NA","#DIV/0!"))
 ```
 
-In exploring the data we found several "NA" and "#DIV/0!" values. From section 5.1 of [the authors´s paper](http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf), we can see that columns with "NA" corresponds not to raw signals data, but to summaries which are calculated at the end of certain time sliding windows, and we can also see that "#DIV/0!" values appears only on those summaries. But we plan to use only raw data, so we can safely disregard these columns.
+In exploring the data we found several "NA" and "#DIV/0!" values. From section 5.1 of [this paper](http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf), we can see that columns with "NA" corresponds not to raw signals data, but to summaries which are calculated at the end of certain time sliding windows, and we can also see that "#DIV/0!" values appears only on those summaries. But we plan to use only raw data, so we can safely disregard these columns.
 
 ```{r collapse=TRUE}
 # Drop columns containing NA
