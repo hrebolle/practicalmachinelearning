@@ -1,0 +1,191 @@
+---
+title: "Practical machine Learning Project"
+author: "Hugo Rebolledo"
+date: "December 26, 2015"
+output: html_document
+---
+
+### Executive Summary
+
+The purpose of this project is to predict the manner in which a group of 6 people performed a weight lifting exercise (the Unilateral Dumbbell Biceps Curl), whether exactly as specified, or making one of four possible mistakes. The data comes from accelerometers on the belt, forearm, arm, and dumbell of the 6 participants, who were asked to perform the weight lifting correctly or incorrectly, while recording the signals.
+
+More information is available from the section on the **Weight Lifting Exercise Dataset** at this website: [Human Activity Recognition](http://groupware.les.inf.puc-rio.br/har)
+
+### Plan for the project
+
+There are 5 classes in the dataset: class A represents the correct execution of the exercise, while classes B,C,D and E represents common mistakes. This is the variable "classe" in the training set.
+
+The plan is to train a machine learning multiclass classification model to predict the output "classe", based on the signals measurements. More precisely, the plan is to:
+
+1. Fit three well known models to a partition of the training data (the **trainSet**), using the **train()** function in the **caret** package. 
+2. Perform a cross validation of these models on the remaining training data (the **crossSet**), using the **confusionMatrix()** function.
+3. Select the model which produces the **lowest out-of-sample** estimated error, which corresponds to  **1 - accuracy**, obtained in the previous step.
+4. Apply this model to the 20 test cases available in the testing data.
+
+### Exploratory Analysis and Data Cleaning
+
+We first load some required libraries and read the datasets.
+
+```{r warning=FALSE, collapse=TRUE}
+library(caret)
+library(MASS)
+library(rpart)
+library(randomForest)
+
+setwd("C:/Users/Hugo Rebolledo/Documents/Rdata/")
+# Download data source files if not done yet
+if (!file.exists("pml-training.csv")) { 
+  download.file("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",
+                  destfile="pml-training.csv")
+}
+if (!file.exists("pml-testing.csv")) { 
+  download.file("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",
+                  destfile="pml-testing.csv")
+}
+
+# Read data, convert DIV/0 to NA.
+trainData <- read.csv("pml-training.csv", na.strings=c("NA","#DIV/0!"))
+testData <- read.csv("pml-testing.csv", na.strings=c("NA","#DIV/0!"))
+```
+
+In exploring the data we found several "NA" and "#DIV/0!" values. From section 5.1 of [the authors´s paper](http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf), we can see that columns with "NA" corresponds not to raw signals data, but to summaries which are calculated at the end of certain time sliding windows, and we can also see that "#DIV/0!" values appears only on those summaries. But we plan to use only raw data, so we can safely disregard these columns.
+
+```{r collapse=TRUE}
+# Drop columns containing NA
+trainData <- trainData[colnames(trainData[colSums(is.na(trainData)) == 0])]
+```
+
+Now we get rid of non predictor columns (case id, participant name, etc.), and convert them to numeric, as required by the models.
+
+```{r collapse=TRUE}
+# Keep only columns "classe" + sensor data
+keepCols <- grep("classe|belt|arm|dumbbell|forearm", names(trainData))
+trainData <- trainData[keepCols]
+
+# Convert all predictor columns to numeric. "classe" is the last column
+for(i in 1:(ncol(trainData)-1)) { trainData[,i] = as.numeric(trainData[,i]) }
+for(i in 1:(ncol(testData)-1)) { testData[,i] = as.numeric(testData[,i]) }
+```
+
+### Prepare for training and cross validation
+
+We know that **train()** does resampling to select a best-fit model for the training data, and produces in-sample error estimations. Nevertheless, we plan to have a cross-validation dataset to compare different models, based on out-of-sample estimation errors. So, the original training dataset will be splitted in two partitions: **trainSet**, to fit the models, and **crossSet** to compare their accuracy.
+
+```{r collapse=TRUE}
+# Create a partition for training and cross validation
+inTrain <- createDataPartition(y=trainData$classe, p=0.7, list=FALSE)
+trainSet <- trainData[inTrain, ]
+crossSet <- trainData[-inTrain, ]
+dim(trainSet)
+dim(crossSet)
+```
+
+### Fitting the models
+
+In the following analysis, the resampling method and size was fixed, in order to use **resamples()** to compare in-sample error measures from the three models (it fails if resampling sizes are different). Some running parameters (tuneLength, ntree) were adjusted (trial and error) to balance performance and quality.
+
+We will not show the models, but only the resulting confusion matrix comparing the predicted outcome with the actual values on the **crossSet**.
+
+The first model is Linear Discriminant Analysis (LDA)
+
+```{r collapse=TRUE}
+# Set parameters for resampling
+cvCtrl <- trainControl(method = "repeatedcv", number = 5)
+
+# Adjust a LDA model
+set.seed(3141593)
+modelLDA <- train(classe ~., data=trainSet, method="lda", trControl=cvCtrl)
+cmLDA <- confusionMatrix(crossSet$classe, predict(modelLDA, crossSet))
+cmLDA$table
+```
+
+The second model is Recursive Partitioning (RPART)
+```{r collapse=TRUE}
+# Adjust a RPART model
+set.seed(3141593)
+modelRPART <- train(classe ~., data=trainSet, method="rpart", 
+                    tuneLength = 30, trControl=cvCtrl)	
+cmRPART <- confusionMatrix(crossSet$classe, predict(modelRPART, crossSet))
+cmRPART$table
+```
+
+Last model is Random Forest (RF)
+
+```{r collapse=TRUE}
+# Adjust a RF model
+set.seed(3141593); 
+modelRF <- train(classe ~., data=trainSet, method="rf", 
+                 ntree=100, trControl=cvCtrl)
+cmRF <- confusionMatrix(crossSet$classe, predict(modelRF, crossSet))
+cmRF$table
+```
+
+From the confusion matrices we can see that Random Forest could be our best candidate.
+
+### Expected out-of-sample error and the final model
+
+To select the final model we compare the out-of-sample expected error, which is  **1 - accuracy**. We have already created a confusion matrix for each model, giving the following accuracy results:
+
+```{r echo=FALSE, collapse=TRUE}
+print(sprintf ("LDA Accuracy:   %.3f", cmLDA$overall['Accuracy']))	
+print(sprintf ("RPART Accuracy: %.3f", cmRPART$overall['Accuracy']))	
+print(sprintf ("RF Accuracy:    %.3f", cmRF$overall['Accuracy']))
+```
+
+So the expected out-of-sample error is, respectively:
+
+```{r echo=FALSE, collapse=TRUE}
+print(sprintf ("LDA expected error:   %4.1f%%", 100*(1-cmLDA$overall['Accuracy'])))	
+print(sprintf ("RPART expected error: %4.1f%%", 100*(1-cmRPART$overall['Accuracy'])))
+print(sprintf ("RF expected error:    %4.1f%%", 100*(1-cmRF$overall['Accuracy'])))
+```
+
+From these results, we select the **Random Forest** model.
+
+It is interesting to compare also the in-sample results, using the **resamples()** function of the **caret** package.
+
+```{r collapse=TRUE}
+cvValues <- resamples(list(LDA = modelLDA, RPART = modelRPART, RF = modelRF))
+summary(cvValues)
+```
+
+Graphically:
+
+```{r echo=FALSE, collapse=TRUE}
+dotplot(cvValues)
+```
+
+We observe in this case both, the in-sample and the out-of-sample error estimations for each model are pretty close.
+
+
+### Variable Importance
+
+The selected model (modelRF) allows us to visualize the relative importance of the predictor variables. The following plot shows the top 20 variables:
+
+```{r echo=FALSE, collapse=TRUE}
+plot(varImp(modelRF), top = 20, main = "Variable Importance (top 20 out of 52 vars)")
+```
+
+### Prediction on the testing dataset
+
+This is obtained by applying the selected model (modelRF) to the test data:
+
+```{r collapse=TRUE}
+prediction <- predict(modelRF, testData)
+prediction
+```
+
+### Prepare files to submit our prediction
+
+As requested:
+
+```{r collapse=TRUE}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+pml_write_files(prediction)
+```
